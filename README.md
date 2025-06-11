@@ -1,128 +1,90 @@
-# OpenstackNxtCloud
+🚀 Déploiement Nextcloud sur OpenStack avec Docker, Nginx, Certbot & Volumes Cinder
 
-
-source PCP-G43FMLT-openrc.sh
-cd ~/.ssh/
-ssh-keygen
-openstack server create --flavor a4-ram16-disk80-perf1 --image 1a1a2fe9-e9b7-4fbf-b34d-c6cd71e1e8ab --network ext-net1 --key-name SshKeyRayan nextcloud-vm_Rayan
-ssh ubuntu@<IP_PUBLIQUE>
-
-1\. **Installation et préparation du système**
-----------------------------------------------
+Voici un guide ultra-visuel et structuré pour briller lors de l’installation de Nextcloud sur une VM OpenStack, avec Docker, Nginx, Certbot et gestion de la persistance via Cinder.
+1. Préparation de la VM et installation des outils
 
 bash
-
-`
-sudo  apt update
+sudo apt update
 sudo apt upgrade -y
-sudo  apt  install docker.io nginx certbot python3-certbot-nginx -y
-sudo systemctl enable --now docker  `
+sudo apt install docker.io nginx certbot python3-certbot-nginx -y
+sudo systemctl enable --now docker
 
-- **But** : Installer Docker, Nginx, Certbot et mettre à jour le système.
+    Objectif : Système à jour, Docker, Nginx et Certbot prêts à l’emploi.
 
-* * * * *
-
-2\. **Téléchargement et lancement du conteneur Nextcloud**
-----------------------------------------------------------
+2. Téléchargement et lancement du conteneur Nextcloud
 
 bash
+sudo docker pull nextcloud
+sudo docker run -d -p 8080:80 --name nextcloud-test nextcloud
 
-`sudo  docker pull nextcloud sudo  docker run -d -p 8080:80 nextcloud `
+    Objectif : Lancer Nextcloud rapidement en mode test.
 
--   **But** : Télécharger puis lancer Nextcloud en mode test.
-
-* * * * *
-
-3\. **Configuration du reverse proxy Nginx**
---------------------------------------------
+3. Configuration du reverse proxy Nginx
 
 bash
+sudo nano /etc/nginx/sites-available/nextcloud
+# (Ajouter la conf reverse proxy)
+sudo ln -s /etc/nginx/sites-available/nextcloud /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl reload nginx
 
-`
-sudo  nano /etc/nginx/sites-available/nextcloud 
-sudo  ln -s /etc/nginx/sites-available/nextcloud /etc/nginx/sites-enabled/
-sudo nginx -t sudo systemctl reload nginx `
+    Objectif : Rediriger le trafic web vers Nextcloud (port 8080).
 
--   **But** : Créer la configuration Nginx pour faire reverse proxy vers Nextcloud.
-
-* * * * *
-
-4\. **Obtention du certificat HTTPS**
--------------------------------------
+4. Obtention d’un certificat HTTPS avec Certbot
 
 bash
+sudo certbot --nginx -d rayab.argb.cfpt.info
 
-`sudo certbot --nginx -d rayab.argb.cfpt.info `
+    Objectif : Sécuriser l’accès à Nextcloud avec HTTPS.
 
--   **But** : Sécuriser l'accès à Nextcloud avec HTTPS via Let's Encrypt.
-
-* * * * *
-
-5\. **Gestion des volumes persistants (Cinder)**
-------------------------------------------------
+5. Gestion de la persistance avec Cinder (volumes OpenStack)
 
 bash
+sudo docker run -d \
+  -p 8080:80 \
+  -v /mnt/cinder/nextcloud-data:/var/www/html/data \
+  -v /mnt/cinder/nextcloud-config:/var/www/html/config \
+  --name nextcloud \
+  nextcloud
 
-`sudo  docker run -d \   -p 8080:80 \  
--v /mnt/cinder/nextcloud-data:/var/www/html/data \ 
--v /mnt/cinder/nextcloud-config:/var/www/html/config \   
---name nextcloud \
-nextcloud `
+    Objectif : Les données et la config Nextcloud sont stockées de façon persistante sur les volumes Cinder.
 
--   **But** : Lancer Nextcloud en Docker avec persistance des données et de la config sur le volume Cinder.
-
-* * * * *
-
-6\. **Vérification de la persistance**
---------------------------------------
+6. Vérification du montage des volumes
 
 bash
+sudo docker exec nextcloud ls -l /var/www/html/data
+sudo docker exec nextcloud ls -l /var/www/html/config
 
-`sudo  docker  exec nextcloud ls -l /var/www/html/data 
- sudo  docker  exec nextcloud ls -l /var/www/html/config `
+    Objectif : S’assurer que les volumes sont bien utilisés par Nextcloud.
 
--   **But** : Vérifier que les volumes sont bien montés et utilisés par Nextcloud.
-
-* * * * *
-
-7\. **Modification de la configuration Nextcloud**
---------------------------------------------------
+7. Modification de la configuration Nextcloud
 
 bash
+sudo nano /mnt/cinder/nextcloud-config/config.php
+# Ajouter les trusted domains et forcer HTTPS
 
-`sudo  nano /mnt/cinder/nextcloud-config/config.php `
+    Objectif : Sécuriser la configuration (trusted domains, HTTPS).
 
--   **But** : Ajouter les trusted domains et le protocole HTTPS dans la config Nextcloud.
-
-* * * * *
-
-8\. **Création du script de sauvegarde**
-----------------------------------------
+8. Création d’un script de sauvegarde automatique
 
 bash
+sudo nano /mnt/cinder/nextcloud-data/backup-nextcloud.sh
+sudo chmod +x /mnt/cinder/nextcloud-data/backup-nextcloud.sh
 
-`sudo  nano /mnt/cinder/nextcloud-data/backup-nextcloud.sh
- sudo  chmod +x /mnt/cinder/nextcloud-data/backup-nextcloud.sh `
+    Objectif : Automatiser la sauvegarde de Nextcloud.
 
--   **But** : Créer et rendre exécutable le script de sauvegarde automatique.
-
-* * * * *
-
-9\. **Automatisation de la sauvegarde**
----------------------------------------
+9. Automatisation via crontab
 
 bash
+sudo crontab -e
+# Ajouter : 0 3 * * * /mnt/cinder/nextcloud-data/backup-nextcloud.sh
 
-`sudo  crontab -e `
+    Objectif : Sauvegarde quotidienne automatique.
 
--   **But** : Ajouter la sauvegarde quotidienne dans la crontab root.
-
-* * * * *
-
-10\. **Lancement manuel et vérification des sauvegardes**
----------------------------------------------------------
+10. Lancement manuel et vérification des sauvegardes
 
 bash
+sudo /mnt/cinder/nextcloud-data/backup-nextcloud.sh
+ls /mnt/cinder/nextcloud-backup/
 
-`sudo /mnt/cinder/nextcloud-data/backup-nextcloud.sh 
- ls /mnt/cinder/nextcloud-backup/`
+    Objectif : Vérifier que les backups sont bien créés.
