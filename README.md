@@ -87,4 +87,132 @@ bash
 sudo /mnt/cinder/nextcloud-data/backup-nextcloud.sh
 ls /mnt/cinder/nextcloud-backup/
 
-    Objectif : Vérifier que les backups sont bien créés.
+Objectif : Vérifier que les backups sont bien créés.
+
+
+🏆 BONUS 1 : Auto-scaling Nextcloud avec Heat + Script (OpenStack)
+
+Ajouter l’auto-scaling à ton infrastructure VM grâce à OpenStack Heat :
+
+text
+# autoscale-nextcloud.yaml
+heat_template_version: 2016-10-14
+description: Auto-scaling Nextcloud avec Heat
+
+parameters:
+  image:
+    type: string
+    default: "1a1a2fe9-e9b7-4fbf-b34d-c6cd71e1e8ab"
+  flavor:
+    type: string
+    default: "a4-ram16-disk80-perf1"
+  network:
+    type: string
+    default: "ext-net1"
+  key_name:
+    type: string
+    default: "SshKeyRayan"
+
+resources:
+  nextcloud_group:
+    type: OS::Heat::AutoScalingGroup
+    properties:
+      cooldown: 120
+      desired_capacity: 1
+      min_size: 1
+      max_size: 3
+      resource:
+        type: OS::Nova::Server
+        properties:
+          image: { get_param: image }
+          flavor: { get_param: flavor }
+          networks: [{ network: { get_param: network } }]
+          key_name: { get_param: key_name }
+
+  scaleup_policy:
+    type: OS::Heat::ScalingPolicy
+    properties:
+      auto_scaling_group_id: { get_resource: nextcloud_group }
+      adjustment_type: change_in_capacity
+      scaling_adjustment: 1
+      cooldown: 120
+
+  scaledown_policy:
+    type: OS::Heat::ScalingPolicy
+    properties:
+      auto_scaling_group_id: { get_resource: nextcloud_group }
+      adjustment_type: change_in_capacity
+      scaling_adjustment: -1
+      cooldown: 120
+
+  cpu_alarm_high:
+    type: OS::Aodh::GnocchiAggregationByResourcesAlarm
+    properties:
+      metric: cpu
+      aggregation_method: rate:mean
+      granularity: 60
+      evaluation_periods: 1
+      threshold: 80
+      resource_type: instance
+      comparison_operator: gt
+      alarm_actions: [{ get_attr: [scaleup_policy, alarm_url] }]
+
+  cpu_alarm_low:
+    type: OS::Aodh::GnocchiAggregationByResourcesAlarm
+    properties:
+      metric: cpu
+      aggregation_method: rate:mean
+      granularity: 60
+      evaluation_periods: 1
+      threshold: 20
+      resource_type: instance
+      comparison_operator: lt
+      alarm_actions: [{ get_attr: [scaledown_policy, alarm_url] }]
+
+Déploie le stack :
+
+bash
+source PCP-G43FMLT-openrc.sh
+openstack stack create -t autoscale-nextcloud.yaml nextcloud-autoscale
+
+🎯 Objectif : Les VM Nextcloud scaleront automatiquement selon la charge CPU !
+🏆 BONUS 2 : Auto-scaling Nextcloud avec Kubernetes (HPA)
+
+Si tu déploies Nextcloud sur Kubernetes, utilise le Horizontal Pod Autoscaler :
+
+text
+# nextcloud-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextcloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nextcloud
+  template:
+    metadata:
+      labels:
+        app: nextcloud
+    spec:
+      containers:
+      - name: nextcloud
+        image: nextcloud
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+
+Active le HPA :
+
+bash
+kubectl autoscale deployment nextcloud --cpu-percent=70 --min=1 --max=5
+kubectl get hpa
+
+🎯 Objectif : Le nombre de pods Nextcloud s’ajuste automatiquement selon la charge !
